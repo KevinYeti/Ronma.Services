@@ -1,9 +1,12 @@
-from res import snowboydecoder
-import os, sys
+from lib import snowboydecoder_arecord
+import os
+import sys
+import time
 import signal
+from pixel_ring import pixel_ring
+import mraa
 
-# Demo code for listening to two hotwords at the same time
-
+#
 interrupted = False
 
 
@@ -16,32 +19,50 @@ def interrupt_callback():
     global interrupted
     return interrupted
 
-if len(sys.argv) < 2:
-    print("Error: need to specify model names and sensitivity")
-    print("Usage: python main.py 0.5")
-    sys.exit(-1)
 
-sensitivity = sys.argv[1]
-files = os.listdir("./res/*.*mdl")
-models = sys.argv[2:]
+def detected_callback():
+    snowboydecoder_arecord.play_audio_file
+    pixel_ring.listen()
 
 
+def main():
+    if len(sys.argv) < 2:
+        print("Error: need to specify sensitivity")
+        print("Usage: python main.py 0.36")
+        sys.exit(-1)
 
-# capture SIGINT signal, e.g., Ctrl+C
-signal.signal(signal.SIGINT, signal_handler)
+    #pixel_ring
+    en = mraa.Gpio(12)
 
-sensitivity = sensitivity*len(models)
-detector = snowboydecoder.HotwordDetector(models, sensitivity=sensitivity)
-callbacks = []
-for i in range(len(models)):
-    callbacks.append(lambda: snowboydecoder.play_audio_file(snowboydecoder.DETECT_DING))
+    if os.geteuid() != 0:
+        time.sleep(1)
 
-print('Listening... Press Ctrl+C to exit')
+    en.dir(mraa.DIR_OUT)
+    en.write(0)
 
-# main loop
-# make sure you have the same numbers of callbacks and models
-detector.start(detected_callback=callbacks,
-               interrupt_check=interrupt_callback,
-               sleep_time=0.03)
+    pixel_ring.set_brightness(20)
+    pixel_ring.change_pattern('echo')
 
-detector.terminate()
+    files = os.listdir("./res/*.*mdl")
+    models = files
+
+    sensitivity = sys.argv[1] * models.count()
+    # capture SIGINT signal, e.g., Ctrl+C
+    signal.signal(signal.SIGINT, signal_handler)
+
+    detector = snowboydecoder_arecord.HotwordDetector(models, sensitivity=sensitivity, audio_gain=2)
+    print('Listening... Press Ctrl+C to exit')
+
+    # main loop
+    detector.start(detected_callback=detected_callback,
+                   interrupt_check=interrupt_callback,
+                   sleep_time=0.03)
+
+    pixel_ring.off()
+    time.sleep(1)
+    en.write(1)
+    detector.terminate()
+
+
+if __name__ == "__main__":
+    main()
